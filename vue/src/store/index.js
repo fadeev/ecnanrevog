@@ -2,12 +2,16 @@ import Vue from "vue";
 import Vuex from "vuex";
 import axios from "axios";
 import app from "./app.js";
-import { Secp256k1Wallet, SigningCosmosClient, makeCosmoshubPath } from "@cosmjs/launchpad";
+import {
+  Secp256k1Wallet,
+  SigningCosmosClient,
+  makeCosmoshubPath,
+} from "@cosmjs/launchpad";
 
 Vue.use(Vuex);
 
 const API = "http://localhost:8080";
-const ADDRESS_PREFIX = "cosmos"
+const ADDRESS_PREFIX = "cosmos";
 
 export default new Vuex.Store({
   state: {
@@ -46,7 +50,11 @@ export default new Vuex.Store({
     },
     async accountSignIn({ commit }, { mnemonic }) {
       return new Promise(async (resolve, reject) => {
-        const wallet = await Secp256k1Wallet.fromMnemonic(mnemonic, makeCosmoshubPath(0), ADDRESS_PREFIX);
+        const wallet = await Secp256k1Wallet.fromMnemonic(
+          mnemonic,
+          makeCosmoshubPath(0),
+          ADDRESS_PREFIX
+        );
         const [{ address }] = await wallet.getAccounts();
         const url = `${API}/auth/accounts/${address}`;
         const acc = (await axios.get(url)).data;
@@ -81,6 +89,29 @@ export default new Vuex.Store({
       const { data } = await axios.post(`${API}/${chain_id}/${type}`, req);
       const { msg, fee, memo } = data.value;
       return await state.client.signAndPost(msg, fee, memo);
+    },
+    async txBroadcast({ state }, { path, body }) {
+      const { chain_id } = state;
+      const creator = state.client.senderAddress;
+      const base_req = { chain_id, from: creator };
+      const req = { base_req, creator, ...body };
+      const { data } = await axios.post(`${API}${path}`, req);
+      const { msg, fee, memo } = data.value;
+      return await state.client.signAndPost(msg, fee, memo);
+    },
+    async txBroadcastGovProposal(
+      { state, dispatch },
+      { title, description, initial_deposit }
+    ) {
+      const body = {
+        title,
+        description,
+        proposal_type: "text",
+        proposer: state.client.senderAddress,
+        initial_deposit,
+      };
+      const path = "/gov/proposals";
+      return await dispatch("txBroadcast", { path, body });
     },
   },
 });

@@ -23,9 +23,12 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/staking"
 	"github.com/cosmos/cosmos-sdk/x/supply"
 	"github.com/fadeev/ecnanrevog/x/ecnanrevog"
+	paramsclient "github.com/cosmos/cosmos-sdk/x/params/client"
+	distr "github.com/cosmos/cosmos-sdk/x/distribution"
 	ecnanrevogkeeper "github.com/fadeev/ecnanrevog/x/ecnanrevog/keeper"
 	ecnanrevogtypes "github.com/fadeev/ecnanrevog/x/ecnanrevog/types"
-  // this line is used by starport scaffolding
+	// this line is used by starport scaffolding
+	"github.com/cosmos/cosmos-sdk/x/gov"
 )
 
 const appName = "ecnanrevog"
@@ -41,13 +44,15 @@ var (
 		params.AppModuleBasic{},
 		supply.AppModuleBasic{},
 		ecnanrevog.AppModuleBasic{},
-    // this line is used by starport scaffolding # 2
+		// this line is used by starport scaffolding # 2
+		gov.NewAppModuleBasic(paramsclient.ProposalHandler, distr.ProposalHandler),
 	)
 
 	maccPerms = map[string][]string{
 		auth.FeeCollectorName:     nil,
 		staking.BondedPoolName:    {supply.Burner, supply.Staking},
 		staking.NotBondedPoolName: {supply.Burner, supply.Staking},
+		gov.ModuleName:            {supply.Burner},
 	}
 )
 
@@ -78,6 +83,7 @@ type NewApp struct {
 	supplyKeeper   supply.Keeper
 	paramsKeeper   params.Keeper
 	ecnanrevogKeeper ecnanrevogkeeper.Keeper
+	govKeeper      gov.Keeper
   // this line is used by starport scaffolding # 3
 	mm *module.Manager
 
@@ -102,7 +108,8 @@ func NewInitApp(
     staking.StoreKey,
 		supply.StoreKey,
     params.StoreKey,
-    ecnanrevogtypes.StoreKey,
+		ecnanrevogtypes.StoreKey,
+		gov.StoreKey,
     // this line is used by starport scaffolding # 5
   )
 
@@ -121,6 +128,7 @@ func NewInitApp(
 	app.subspaces[auth.ModuleName] = app.paramsKeeper.Subspace(auth.DefaultParamspace)
 	app.subspaces[bank.ModuleName] = app.paramsKeeper.Subspace(bank.DefaultParamspace)
 	app.subspaces[staking.ModuleName] = app.paramsKeeper.Subspace(staking.DefaultParamspace)
+	govSubspace := app.paramsKeeper.Subspace(gov.DefaultParamspace).WithKeyTable(gov.ParamKeyTable())
 
 	app.accountKeeper = auth.NewAccountKeeper(
 		app.cdc,
@@ -160,6 +168,17 @@ func NewInitApp(
 		keys[ecnanrevogtypes.StoreKey],
 	)
 
+	govRouter := gov.NewRouter()
+	govRouter.AddRoute(gov.RouterKey, gov.ProposalHandler)
+
+	app.govKeeper = gov.NewKeeper(
+		app.cdc,
+		keys[gov.StoreKey],
+		govSubspace,
+		app.supplyKeeper,
+		&stakingKeeper,
+		govRouter,
+	)
   // this line is used by starport scaffolding # 4
 
 	app.mm = module.NewManager(
@@ -169,10 +188,11 @@ func NewInitApp(
 		supply.NewAppModule(app.supplyKeeper, app.accountKeeper),
 		ecnanrevog.NewAppModule(app.ecnanrevogKeeper, app.bankKeeper),
 		staking.NewAppModule(app.stakingKeeper, app.accountKeeper, app.supplyKeeper),
+		gov.NewAppModule(app.govKeeper, app.accountKeeper, app.supplyKeeper),
     // this line is used by starport scaffolding # 6
 	)
 
-	app.mm.SetOrderEndBlockers(staking.ModuleName)
+	app.mm.SetOrderEndBlockers(gov.ModuleName, staking.ModuleName)
 
 	app.mm.SetOrderInitGenesis(
 		staking.ModuleName,
@@ -181,6 +201,7 @@ func NewInitApp(
 		ecnanrevogtypes.ModuleName,
 		supply.ModuleName,
 		genutil.ModuleName,
+		gov.ModuleName,
     // this line is used by starport scaffolding # 7
 	)
 
